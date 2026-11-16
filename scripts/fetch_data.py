@@ -199,7 +199,16 @@ def main() -> int:
     events = [scrub_event(event) for event in events]
 
     events.sort(key=lambda e: (e.get("announceDate") or "", e.get("amount") or 0), reverse=True)
-    events = events[: int(config.get("maxEvents", 2000))]
+    # 上限从 2000 提到 5000（90 天四类事件实测约 3167 条，2000 会砍掉最早的三分之一）。
+    # 真到截断时必须在日志里说出来：sources 里的 count 是截断前的采集条数，
+    # 与 stats 的截断后条数对不上，静默截断会让人以为看板收录了全部事件。
+    limit = int(config.get("maxEvents", 5000))
+    if len(events) > limit:
+        logging.warning(
+            "事件 %d 条超过 maxEvents=%d，已按公告日倒序截断 %d 条（最早的事件被丢弃）",
+            len(events), limit, len(events) - limit,
+        )
+    events = events[:limit]
 
     today = dt.date.today().isoformat()
     prev_ids = {e["id"] for e in (previous or {}).get("events", [])}

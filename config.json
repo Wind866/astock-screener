@@ -1,6 +1,6 @@
 {
   "lookbackDays": 90,
-  "maxEvents": 2000,
+  "maxEvents": 5000,
   "minAmountWan": 0,
   "extraAmountUnit": "wan",
   "selection": {
