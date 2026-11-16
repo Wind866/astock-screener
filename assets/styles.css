@@ -363,7 +363,9 @@ select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in sr
 .chart-tip b { font-weight: 650; }
 
 /* ============================== 表格 ============================== */
-.table-card { padding: 0; overflow: hidden; }
+/* 注意：overflow:hidden/auto 会成为 sticky 的滚动容器，导致表头吸顶错位，
+   所以这里用 clip（不产生滚动容器）；窄屏（表格需横向滚动时）关闭吸顶，见下方媒体查询。 */
+.table-card { padding: 0; overflow: hidden; overflow: clip; }
 .table-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 13px 16px;
@@ -374,8 +376,8 @@ select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in sr
 .result strong { font-size: 19px; color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 .table-tools { display: flex; gap: 8px; }
 
-.table-scroll { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; min-width: 940px; }
+.table-scroll { overflow-x: clip; }
+table { width: 100%; border-collapse: collapse; min-width: 900px; }
 thead th {
   position: sticky; top: var(--topbar-h); z-index: 2;
   background: var(--panel-2);
@@ -541,6 +543,12 @@ td.c-status { color: var(--muted); font-size: 12px; }
   box-shadow: 0 14px 30px -14px rgba(0, 0, 0, .7);
 }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* 窄屏：表格需要横向滚动（overflow:auto 会让 sticky 以容器为参照而错位），关闭吸顶 */
+@media (max-width: 1259px) {
+  .table-scroll { overflow-x: auto; }
+  thead th { position: static; }
+}
 
 /* ============================== 响应式 ============================== */
 @media (max-width: 1360px) {
