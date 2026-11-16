@@ -51,14 +51,30 @@ python -m http.server 8000              # 打开 http://localhost:8000
 | `FEISHU_WEBHOOK` | 机器人 webhook 地址 | ✅ |
 | `FEISHU_SECRET` | 签名密钥 | 开了签名时 |
 | `PAGE_URL` | 部署后的站点地址，卡片里的「打开筛选器」按钮会跳到这里 | 建议 |
+| `ALERT_WEBHOOK` | 独立告警机器人，业务机器人挂掉时告警还能发出去 | 可选 |
+| `ALERT_SECRET` | 告警机器人签名密钥（未配时回落 `FEISHU_SECRET`） | 可选 |
+
+变量名与 [BIGApush](https://github.com/Wind866/BIGApush) 完全一致，**直接复用同一个机器人即可**，不用新建。
 
 本地测试：
 
 ```bash
 export FEISHU_WEBHOOK="https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
-python scripts/notify_feishu.py --dry-run   # 预览卡片
-python scripts/notify_feishu.py             # 实际发送
+python scripts/notify_feishu.py --dry-run            # 预览卡片
+python scripts/notify_feishu.py --no-ledger          # 实际发送（不写台账）
+python scripts/notify_feishu.py --force              # 已推送也强制再发
 ```
+
+### 推送可靠性（照 BIGApush 的实战结论做的）
+
+| 机制 | 解决什么 |
+| --- | --- |
+| 加签 + **业务码校验** | 机器人开加签后飞书返回 `{"code":19021}` 但 HTTP 仍是 200，只看 HTTP 会误判成功，告警就此静默。现在 19021 / 19024 会打印可照做的提示 |
+| 网络重试 | 飞书偶发 502 / 连接重置，自动重试 2 次（4xx 不重试，重试无意义） |
+| **多档 cron 兜底** | GitHub `schedule` 实测延迟 4h 以上、偶有整档丢弃；主档 16:40 之后每 2 小时补一档，铺到 +6h |
+| **推送台账** `.push-state/ledger.json` | 补档会重复推同一档期，按 `workflow+日期+档期` 判重；**推成功才记账**，失败留给下一档重试 |
+| 交易日预检 | 节假日不把昨天的榜单再推一遍（akshare 交易日历，取不到时退化为工作日判断） |
+| 失败告警 | 任务失败 / 被取消时发到告警机器人，附 run 链接 |
 
 ## 部署到 GitHub
 
@@ -72,7 +88,9 @@ git push -u origin main
 
 1. **Settings → Pages → Source 选 GitHub Actions**，`pages.yml` 会把整个仓库作为静态站点发布，地址形如 `https://<用户名>.github.io/astock-screener/`
 2. 把这个地址填到 `PAGE_URL` Secret，飞书卡片即可一键跳转
-3. `daily.yml` 每个工作日 16:40（北京时间）自动采集、推送、回写 `data/` 快照；也可在 Actions 页面手动 Run
+3. `daily.yml` 自动采集→推送→回写 `data/` 与台账；也可在 Actions 页面手动 Run（勾 `force` 可强制重推）
+
+> CI（`ci.yml`）会在每次 push 时跑守护测试：**扫描是否误提交了真实 webhook**、数据结构是否合法、外部数据归一化是否回归、工作流 YAML 是否可解析。
 
 ## 接入你已有的项目数据
 
@@ -118,15 +136,22 @@ python scripts/merge_extra.py             # 确认后写回 data/latest.json
 │   ├── latest.json / .js    # 最新数据（脚本会同时生成两种格式）
 │   ├── extra/               # 旧项目/外部 JSON 投喂目录
 │   └── history/             # 每日快照与索引
+├── .push-state/ledger.json  # 推送幂等台账（需提交，跨运行共享）
 ├── scripts/
 │   ├── collectors.py        # 五类事件采集与归一化
 │   ├── fetch_data.py        # 采集入口（--demo / --days）
 │   ├── merge_extra.py       # 外部 JSON 归一化与合并
-│   ├── notify_feishu.py     # 飞书卡片推送（含签名）
+│   ├── feishu_webhook.py    # 飞书发送层（加签/重试/业务码校验）
+│   ├── notify_feishu.py     # 事件卡片推送
+│   ├── push_ledger.py       # 推送幂等台账
+│   ├── is_trading_day.py    # 交易日预检
+│   ├── alert.py             # 失败告警
 │   └── demo_data.py         # 离线演示数据
+├── tests/test_guardrails.py # webhook 泄露扫描 / 数据结构 / 归一化回归
 ├── .github/workflows/
-│   ├── daily.yml            # 定时采集 + 推送 + 快照回写
-│   └── pages.yml            # GitHub Pages 部署
+│   ├── daily.yml            # 多档 cron 采集 + 推送 + 台账 + 告警
+│   ├── pages.yml            # GitHub Pages 部署
+│   └── ci.yml               # 守护测试
 └── config.json              # 运行配置
 ```
 

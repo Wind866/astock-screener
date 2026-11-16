@@ -251,9 +251,12 @@ def collect_repurchases(days: int = 90) -> tuple[list[dict], str]:
             continue
 
         amount_wan = amount_yuan / 1e4 if amount_yuan else (plan_high / 1e4 if plan_high else None)
+        progress = str(_cell(row, columns, "实施进度") or "进行中").strip()
         events.append(
             {
-                "id": f"repurchase-{code}-{effective}",
+                # id 里带上进度与金额：同一家公司同日可能有多份回购公告（不同方案/不同进度），
+                # 只按 code+日期 会被误合并成一条
+                "id": f"repurchase-{code}-{effective}-{progress}-{int(amount_wan or 0)}",
                 "type": "repurchase",
                 "code": code,
                 "name": str(_cell(row, columns, "股票简称", "名称") or "").strip(),
@@ -270,7 +273,7 @@ def collect_repurchases(days: int = 90) -> tuple[list[dict], str]:
                 "startDate": start_date,
                 "endDate": "",
                 "announceDate": effective,
-                "status": str(_cell(row, columns, "实施进度") or "进行中").strip(),
+                "status": progress,
                 "priceLow": _to_float(_cell(row, columns, "已回购股份价格区间-下限")),
                 "priceHigh": _to_float(_cell(row, columns, "已回购股份价格区间-上限")),
                 "planAmountLow": plan_low / 1e4 if plan_low else None,

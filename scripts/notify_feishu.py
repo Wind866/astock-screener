@@ -12,27 +12,23 @@
 from __future__ import annotations
 
 import argparse
-import base64
-import hashlib
-import hmac
+import datetime as dt
 import json
 import os
 import sys
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import feishu_webhook  # noqa: E402
+import push_ledger  # noqa: E402
+
 DATA_FILE = ROOT / "data" / "latest.json"
 CONFIG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
 
 TYPE_LABEL = {"increase": "增持", "decrease": "减持", "placement": "定增", "repurchase": "回购", "dividend": "分红"}
 TYPE_EMOJI = {"increase": "🔴", "decrease": "🟢", "placement": "🟠", "repurchase": "🔵", "dividend": "🟣"}
-
-
-def sign(secret: str, timestamp: int) -> str:
-    string_to_sign = f"{timestamp}\n{secret}"
-    digest = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
-    return base64.b64encode(digest).decode("utf-8")
 
 
 def fmt_amount(wan) -> str:
@@ -76,9 +72,16 @@ def build_card(data: dict) -> dict:
     by_type = stats.get("byType", {})
     limit = int(CONFIG.get("feishu", {}).get("maxItemsPerSection", 6))
 
+    # 数据日期不是今天就打警告，避免把昨天的榜单当成今日行情（BIGApush 同口径）
+    stale = ""
+    if today and today != dt.date.today().isoformat():
+        stale = " ⚠️非当日"
+
     net = stats.get("netIncrease", 0)
+    new_events = (data.get("delta") or {}).get("newEvents")
+    new_text = f" · 较上次新增 **{new_events}** 条" if new_events else ""
     summary = (
-        f"**📊 事件总览**（近 {data.get('lookbackDays', '—')} 天窗口 · 涉及 **{stats.get('stocks', 0)}** 只个股）\n"
+        f"**📊 事件总览**（近 {data.get('lookbackDays', '—')} 天窗口 · 涉及 **{stats.get('stocks', 0)}** 只个股{new_text}）\n"
         f"🔴 增持 {by_type.get('increase', {}).get('count', 0)} 条 · {fmt_amount(by_type.get('increase', {}).get('amount'))}　"
         f"🟢 减持 {by_type.get('decrease', {}).get('count', 0)} 条 · {fmt_amount(by_type.get('decrease', {}).get('amount'))}\n"
         f"🟠 定增 {by_type.get('placement', {}).get('count', 0)} 单 · {fmt_amount(by_type.get('placement', {}).get('amount'))}　"
@@ -136,7 +139,7 @@ def build_card(data: dict) -> dict:
         "config": {"wide_screen_mode": True},
         "header": {
             "template": "indigo",
-            "title": {"tag": "plain_text", "content": f"📈 A股事件雷达 · {today}"},
+            "title": {"tag": "plain_text", "content": f"📈 A股事件雷达 · 数据截至 {today}{stale}"},
         },
         "elements": elements,
     }
@@ -146,8 +149,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="不实际发送，仅打印卡片")
     parser.add_argument("--file", default=None, help="指定数据文件（默认 data/latest.json）")
+    parser.add_argument("--slot", default="16", help="档期小时（默认 16 = 收盘后），用于台账判重")
+    parser.add_argument("--edition", default="", help="档期日期，默认今天")
+    parser.add_argument("--force", action="store_true", help="忽略台账强制推送")
+    parser.add_argument("--no-ledger", action="store_true", help="不读也不写台账（纯手动调试）")
     args = parser.parse_args()
 
+    edition = args.edition or dt.date.today().isoformat()
     data_path = Path(args.file) if args.file else DATA_FILE
     if not data_path.exists():
         print(f"❌ 数据文件不存在：{data_path}，请先运行 fetch_data.py", file=sys.stderr)
@@ -166,26 +174,33 @@ def main() -> int:
                 print()
         return 0
 
-    webhook = os.environ.get("FEISHU_WEBHOOK") or ""
-    secret = os.environ.get("FEISHU_SECRET") or ""
+    # 台账判重：同一天同一档期推过就不再推（多档 cron 兜底的去重）
+    if not args.no_ledger and not args.force:
+        hit = push_ledger.find("daily.yml", edition, args.slot)
+        if hit:
+            print(f"[ledger] {edition} slot={args.slot} 已推过（{hit.get('ts')} / run {hit.get('run_id') or '—'}），跳过")
+            return 0
+
+    webhook, secret = feishu_webhook.resolve_credentials()
     if not webhook:
         print("❌ 未配置 FEISHU_WEBHOOK 环境变量", file=sys.stderr)
         return 1
 
-    import requests  # noqa: PLC0415
+    try:
+        result = feishu_webhook.post_json(webhook, payload, secret)
+    except Exception as exc:  # noqa: BLE001 - 网络层失败
+        print(f"❌ 飞书推送网络异常：{exc}", file=sys.stderr)
+        return 1
 
-    if secret:
-        timestamp = int(time.time())
-        payload["timestamp"] = str(timestamp)
-        payload["sign"] = sign(secret, timestamp)
+    if not feishu_webhook.response_ok(result):
+        print(f"❌ 飞书推送失败：{result}{feishu_webhook.describe_rejection(result)}", file=sys.stderr)
+        return 1
 
-    resp = requests.post(webhook, json=payload, timeout=15)
-    result = resp.json()
-    if result.get("code") in (0, None) and result.get("msg") in ("success", None):
-        print(f"✅ 飞书推送成功：{result}")
-        return 0
-    print(f"❌ 飞书推送失败：{result}", file=sys.stderr)
-    return 1
+    print(f"✅ 飞书推送成功：{result}")
+    if not args.no_ledger:
+        push_ledger.record("daily.yml", edition, args.slot, note=f"{len(data.get('events', []))} 条事件")
+        print(f"[ledger] 已记账 {edition} slot={args.slot}")
+    return 0
 
 
 if __name__ == "__main__":

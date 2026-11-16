@@ -1,13 +1,20 @@
 name: 每日事件采集与飞书推送
 
+# 北京时间 = UTC+8。
+# GitHub 的 schedule 实测会延迟 4h 以上、偶有整档丢弃（BIGApush 里的实测结论），
+# 所以主档之后每 2 小时铺一档兜底，靠 .push-state/ledger.json 判重，补档不会重复刷屏。
+# 非交易日（周末/节假日）由 scripts/is_trading_day.py 直接跳过，不推昨天的榜单。
+
 on:
   schedule:
-    # 每个交易日收盘后 16:40（北京时间）≈ 08:40 UTC；GitHub cron 用 UTC
-    - cron: '40 8 * * 1-5'
+    - cron: '40 8 * * 1-5'    # 北京 16:40 主档（收盘后）
+    - cron: '40 10 * * 1-5'   # 18:40 (+2h)
+    - cron: '40 12 * * 1-5'   # 20:40 (+4h)
+    - cron: '40 14 * * 1-5'   # 22:40 (+6h)
   workflow_dispatch:
     inputs:
       force:
-        description: '忽略去重强制推送'
+        description: '忽略台账判重，强制再推一次'
         type: boolean
         default: false
 
@@ -18,10 +25,18 @@ concurrency:
   group: daily-collect
   cancel-in-progress: false
 
+env:
+  TZ: Asia/Shanghai
+  # 告警机器人独立于业务机器人：业务 webhook 挂掉时告警还能发得出去
+  FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+  FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
+  ALERT_WEBHOOK: ${{ secrets.ALERT_WEBHOOK }}
+  ALERT_SECRET: ${{ secrets.ALERT_SECRET }}
+
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: 检出仓库
         uses: actions/checkout@v4
@@ -35,24 +50,50 @@ jobs:
       - name: 安装依赖
         run: pip install -r requirements.txt
 
+      - name: 交易日预检
+        id: trading
+        run: python scripts/is_trading_day.py
+
+      - name: 台账判重（同档期只推一次）
+        id: ledger
+        if: steps.trading.outputs.is_trading == 'true'
+        run: python scripts/push_ledger.py --check --workflow daily.yml --slot 16 ${{ inputs.force && '--force' || '' }}
+
+      - name: 非交易日提示
+        if: steps.trading.outputs.is_trading != 'true'
+        run: echo "::notice::非交易日，已跳过采集与推送"
+
+      - name: 本档期已推送提示
+        if: steps.trading.outputs.is_trading == 'true' && steps.ledger.outputs.should_push != 'true'
+        run: echo "::notice::本档期已推送成功，本次为补档跳过（要重推用 workflow_dispatch 勾选 force）"
+
       - name: 采集事件数据
+        if: steps.trading.outputs.is_trading == 'true' && steps.ledger.outputs.should_push == 'true'
         run: python scripts/fetch_data.py
 
       - name: 推送到飞书
+        if: steps.trading.outputs.is_trading == 'true' && steps.ledger.outputs.should_push == 'true'
         env:
-          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-          FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
           PAGE_URL: ${{ secrets.PAGE_URL }}
-        run: python scripts/notify_feishu.py
+        run: python scripts/notify_feishu.py --slot 16 ${{ inputs.force && '--force' || '' }}
 
-      - name: 回写数据快照
+      - name: 回写数据快照与推送台账
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/
+          git add data/ .push-state/ || true
           if git diff --cached --quiet; then
             echo "数据无变化，跳过提交"
           else
             git commit -m "data: 每日快照 $(date -u +%F)" --no-verify
             git push
           fi
+
+      - name: 失败告警
+        if: failure()
+        run: python scripts/alert.py "⚠️ A股事件雷达：每日采集/推送任务失败" || true
+
+      - name: 取消或超时告警
+        if: always() && job.status == 'cancelled'
+        run: python scripts/alert.py "⚠️ A股事件雷达：job 被取消或超时（failure() 不会触发）" || true

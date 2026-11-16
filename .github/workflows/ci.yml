@@ -1,0 +1,32 @@
+name: CI
+
+# 公开仓库的两条底线：
+#   1. 不许提交真实 webhook（拿到就能往群里发消息，爬虫抓得很快）
+#   2. 数据文件与字段映射不许静默坏掉（前端会白屏而不是报错）
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 语法检查
+        run: python -m compileall -q scripts tests
+
+      - name: 守护测试（webhook 泄露 / 数据结构 / 归一化 / 加签 / 工作流 YAML）
+        run: |
+          pip install --quiet pyyaml
+          python -m unittest discover -s tests -v

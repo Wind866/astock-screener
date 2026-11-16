@@ -4,6 +4,9 @@ __pycache__/
 .venv/
 venv/
 
+# 运行时缓存（交易日历等）
+.cache/
+
 # 编辑器
 .vscode/
 .idea/
