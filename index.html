@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>A股事件筛选器 · 增减持 / 定增 / 回购 / 分红</title>
+<meta name="description" content="按股东增减持、定增、回购、分红四类事件筛选 A 股个股，支持金额、股息率、板块、时间区间多条件组合与排序。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232b59ff'/%3E%3Cpath d='M8 21l5-6 4 3 6-8' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M3 17l5-6 4 3 6-9" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 21h18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" opacity=".45"/></svg>
+      </span>
+      <div class="brand-text">
+        <h1>A股事件筛选器</h1>
+        <p>股东增减持 · 定增 · 回购 · 分红</p>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <span class="pill" id="modePill">加载中</span>
+      <span class="pill subtle" id="updatePill"><span class="dot"></span>—</span>
+      <button class="ghost-btn" id="btnFilterMobile" type="button" aria-controls="sidebar" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        筛选
+      </button>
+      <button class="icon-btn" id="btnTheme" type="button" title="切换深浅色" aria-label="切换深浅色">
+        <svg class="i-light" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="1.9"/><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+        <svg class="i-dark" viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8.2 8.2 0 019.6 4 8.4 8.4 0 1020 14.5z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="ghost-btn" id="btnReload" type="button">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M20 12a8 8 0 11-2.4-5.7M20 4v4.6h-4.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        刷新
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="side-head">
+      <h2>筛选条件</h2>
+      <button class="link-btn" id="btnReset" type="button">重置</button>
+    </div>
+
+    <div class="field">
+      <label for="q">关键词</label>
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="6.4" stroke="currentColor" stroke-width="2"/><path d="M16 16l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="q" type="search" placeholder="代码 / 名称 / 股东" autocomplete="off" spellcheck="false">
+        <kbd>/</kbd>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>事件类型</label>
+      <div class="chips" id="typeChips"></div>
+      <p class="hint">可多选，不选＝全部</p>
+    </div>
+
+    <div class="field">
+      <label for="board">所属板块</label>
+      <select id="board">
+        <option value="">全部板块</option>
+        <option value="沪市主板">沪市主板</option>
+        <option value="深市主板">深市主板</option>
+        <option value="创业板">创业板</option>
+        <option value="科创板">科创板</option>
+        <option value="北交所">北交所</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>公告时间</label>
+      <div class="segmented" id="rangeSeg" role="group" aria-label="公告时间范围">
+        <button type="button" data-days="7">7天</button>
+        <button type="button" data-days="30">30天</button>
+        <button type="button" data-days="90" class="is-active">90天</button>
+        <button type="button" data-days="0">全部</button>
+      </div>
+    </div>
+
+    <div class="field two">
+      <div>
+        <label for="minAmount">金额下限</label>
+        <select id="minAmount">
+          <option value="0">不限</option>
+          <option value="500">≥ 500 万</option>
+          <option value="2000">≥ 2000 万</option>
+          <option value="5000">≥ 5000 万</option>
+          <option value="10000">≥ 1 亿</option>
+          <option value="50000">≥ 5 亿</option>
+        </select>
+      </div>
+      <div>
+        <label for="minYield">股息率≥</label>
+        <select id="minYield">
+          <option value="0">不限</option>
+          <option value="1">1%</option>
+          <option value="2">2%</option>
+          <option value="3">3%</option>
+          <option value="5">5%</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="status">进度状态</label>
+      <select id="status"><option value="">全部状态</option></select>
+    </div>
+
+    <div class="field">
+      <label for="sort">排序方式</label>
+      <select id="sort">
+        <option value="announceDate-desc">公告日期 · 新 → 旧</option>
+        <option value="announceDate-asc">公告日期 · 旧 → 新</option>
+        <option value="amount-desc">事件金额 · 大 → 小</option>
+        <option value="amount-asc">事件金额 · 小 → 大</option>
+        <option value="ratio-desc">占比 / 股息率 · 高 → 低</option>
+        <option value="shares-desc">变动数量 · 多 → 少</option>
+        <option value="changePct-desc">当日涨跌幅 · 高 → 低</option>
+        <option value="name-asc">股票名称 · A → Z</option>
+      </select>
+    </div>
+
+    <label class="switch">
+      <input type="checkbox" id="favOnly">
+      <span class="track"></span>
+      <span>只看自选股</span>
+    </label>
+    <p class="hint">自选股仅保存在本机浏览器</p>
+  </aside>
+
+  <section class="main">
+    <div class="kpis" id="kpis"></div>
+
+    <div class="chart-row">
+      <div class="card">
+        <div class="card-head">
+          <h3>近 14 日事件分布</h3>
+          <span class="muted" id="trendHint">按当前筛选</span>
+        </div>
+        <div class="chart" id="chartTrend"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h3>事件金额构成</h3>
+          <span class="muted">单位：万元</span>
+        </div>
+        <div class="chart donut-wrap" id="chartDonut"></div>
+      </div>
+    </div>
+
+    <div class="card table-card">
+      <div class="table-head">
+        <div class="result">
+          <strong id="resultCount">0</strong>
+          <span>条结果</span>
+          <span class="muted" id="resultHint"></span>
+        </div>
+        <div class="table-tools">
+          <button class="ghost-btn sm" id="btnFavView" type="button">只看自选</button>
+          <button class="ghost-btn sm" id="btnCsv" type="button">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 4v10m0 0l-3.6-3.6M12 14l3.6-3.6M5 17.5V19a1 1 0 001 1h12a1 1 0 001-1v-1.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            导出 CSV
+          </button>
+        </div>
+      </div>
+
+      <div class="table-scroll">
+        <table id="table">
+          <thead>
+            <tr>
+              <th class="c-star" scope="col"><span class="sr">自选</span></th>
+              <th class="c-code sortable" data-sort="code" scope="col">代码</th>
+              <th class="c-name sortable" data-sort="name" scope="col">名称</th>
+              <th class="sortable" data-sort="type" scope="col">类型</th>
+              <th class="c-party" scope="col">变动方 / 分红方案</th>
+              <th class="c-num sortable" data-sort="shares" scope="col">数量</th>
+              <th class="c-num sortable" data-sort="ratio" scope="col">占比 / 股息率</th>
+              <th class="c-num sortable" data-sort="amount" scope="col">金额</th>
+              <th class="c-date sortable" data-sort="announceDate" scope="col">公告日</th>
+              <th class="c-status" scope="col">状态</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="mobile-list" id="mobileList"></div>
+      <div class="pager" id="pager"></div>
+    </div>
+
+    <footer class="foot">
+      <p><strong>数据来源</strong>：东方财富（AKShare 接口）· 股东增减持 / 增发 / 回购 / 分红送配。金额为按最新价或方案估算，仅供参考。</p>
+      <p class="muted">本工具仅做信息聚合，不构成任何投资建议。数据可能存在延迟或口径差异，请以交易所公告为准。</p>
+      <p class="muted" id="sourceStatus"></p>
+    </footer>
+  </section>
+</main>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-label="事件详情">
+  <div class="drawer-head">
+    <div class="drawer-title">
+      <h3 id="drawerName">—</h3>
+      <p id="drawerCode">—</p>
+    </div>
+    <button class="icon-btn" id="btnDrawerClose" type="button" aria-label="关闭">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+</aside>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="data/latest.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

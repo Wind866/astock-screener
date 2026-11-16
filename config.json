@@ -1,0 +1,15 @@
+{
+  "lookbackDays": 90,
+  "maxEvents": 2000,
+  "minAmountWan": 0,
+  "sources": {
+    "holder": true,
+    "placement": true,
+    "repurchase": true,
+    "dividend": true
+  },
+  "feishu": {
+    "maxItemsPerSection": 6,
+    "pageUrl": ""
+  }
+}

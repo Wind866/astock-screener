@@ -1,0 +1,58 @@
+name: 每日事件采集与飞书推送
+
+on:
+  schedule:
+    # 每个交易日收盘后 16:40（北京时间）≈ 08:40 UTC；GitHub cron 用 UTC
+    - cron: '40 8 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: '忽略去重强制推送'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 采集事件数据
+        run: python scripts/fetch_data.py
+
+      - name: 推送到飞书
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
+          PAGE_URL: ${{ secrets.PAGE_URL }}
+        run: python scripts/notify_feishu.py
+
+      - name: 回写数据快照
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "数据无变化，跳过提交"
+          else
+            git commit -m "data: 每日快照 $(date -u +%F)" --no-verify
+            git push
+          fi
