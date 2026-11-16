@@ -110,7 +110,8 @@ def main() -> int:
         "asOf": max(p["date"] for p in picks.values()),
         "days": args.days,
         "count": len(picks),
-        "picks": sorted(picks.values(), key=lambda p: (p["date"], p["rank"] or 999), reverse=True),
+        # 日期倒序；同一天内名次靠前的排前面
+        "picks": sorted(picks.values(), key=lambda p: (p["date"], -(p["rank"] or 999)), reverse=True),
     }
 
     out.parent.mkdir(parents=True, exist_ok=True)
