@@ -37,6 +37,8 @@ jobs:
   collect:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    outputs:
+      data_changed: ${{ steps.commit.outputs.changed }}
     steps:
       - name: 检出仓库
         uses: actions/checkout@v4
@@ -78,6 +80,7 @@ jobs:
         run: python scripts/notify_feishu.py --slot 16 ${{ inputs.force && '--force' || '' }}
 
       - name: 回写数据快照与推送台账
+        id: commit
         if: always()
         run: |
           git config user.name "github-actions[bot]"
@@ -85,9 +88,11 @@ jobs:
           git add data/ .push-state/ || true
           if git diff --cached --quiet; then
             echo "数据无变化，跳过提交"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m "data: 每日快照 $(date -u +%F)" --no-verify
             git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: 失败告警
@@ -97,3 +102,37 @@ jobs:
       - name: 取消或超时告警
         if: always() && job.status == 'cancelled'
         run: python scripts/alert.py "⚠️ A股事件雷达：job 被取消或超时（failure() 不会触发）" || true
+
+  # 用 GITHUB_TOKEN 提交的 commit 不会触发 pages.yml（GitHub 防递归机制），
+  # 所以每日数据更新后必须在本流程内部自己发一次 Pages，否则线上站点永远停在旧数据。
+  deploy:
+    needs: collect
+    if: needs.collect.outputs.data_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: true
+    steps:
+      - name: 检出仓库（取最新 main，含刚提交的快照）
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: 配置 Pages
+        uses: actions/configure-pages@v5
+
+      - name: 上传静态站点
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: 部署
+        id: deployment
+        uses: actions/deploy-pages@v4
