@@ -33,8 +33,15 @@ updates:
     # akshare 钉死 ==1.20.42：collectors 依赖其列名与字段名，上游改一次字段
     # 就会静默取到空数据。升级必须人工改 requirements + 跑一次 daily.yml 实测。
     # 只拦版本更新，安全公告仍会正常开 PR。
+    #
+    # pandas 拦主版本：requirements 里 <3 的上界是刻意的（BIGApush 同款），
+    # pandas 3 的 Copy-on-Write 与 dtype 变更会打断取数链路，必须人工评估后
+    # 同步改流程再放开，不能由机器人每周开一个 PR。2.x 的补丁与安全更新不受影响。
     ignore:
       - dependency-name: "akshare"
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"
+      - dependency-name: "pandas"
+        update-types:
+          - "version-update:semver-major"
