@@ -78,7 +78,8 @@ jobs:
       - name: 推送到飞书
         if: steps.trading.outputs.is_trading == 'true' && steps.ledger.outputs.should_push == 'true'
         env:
-          PAGE_URL: ${{ secrets.PAGE_URL }}
+          # 与 limit-up-relay / BIGApush 统一用 PAGES_URL；PAGE_URL 为旧名，保留回落避免老配置失效
+          PAGES_URL: ${{ secrets.PAGES_URL || secrets.PAGE_URL }}
         run: python scripts/notify_feishu.py --slot 2033 ${{ inputs.force && '--force' || '' }}
 
       - name: 回写数据快照与推送台账

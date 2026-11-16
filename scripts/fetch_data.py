@@ -19,6 +19,7 @@ import argparse
 import datetime as dt
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -29,6 +30,10 @@ from collectors import collect_all  # noqa: E402
 
 DATA_DIR = ROOT / "data"
 HISTORY_DIR = DATA_DIR / "history"
+# 快照文件名是 YYYY-MM-DD.json，含连字符，绝不能用 stem.isdigit() 判断 ——
+# 那会恒为 False，导致 index.json 永远是空数组、180 份保留期永不生效
+# （每交易日约 1.1 MB 无限增长）。只匹配纯日期形态，index.json 等其它文件不受影响。
+SNAPSHOT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TYPE_ORDER = ["increase", "decrease", "placement", "repurchase", "dividend"]
 TYPE_LABEL = {
     "increase": "增持",
@@ -106,7 +111,9 @@ def write_payload(payload: dict) -> None:
     stamp = payload["tradeDate"]
     (HISTORY_DIR / f"{stamp}.json").write_text(text, encoding="utf-8")
 
-    snapshots = sorted((p.stem for p in HISTORY_DIR.glob("*.json") if p.stem.isdigit()), reverse=True)
+    snapshots = sorted(
+        (p.stem for p in HISTORY_DIR.glob("*.json") if SNAPSHOT_RE.match(p.stem)), reverse=True
+    )
     (HISTORY_DIR / "index.json").write_text(
         json.dumps({"dates": snapshots[:180]}, ensure_ascii=False), encoding="utf-8"
     )

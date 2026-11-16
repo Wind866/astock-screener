@@ -4,7 +4,7 @@
 用法：
     export FEISHU_WEBHOOK="https://open.feishu.cn/open-apis/bot/v2/hook/xxxx"
     export FEISHU_SECRET=""            # 可选：机器人开了签名校验时必填
-    export PAGE_URL="https://xxx.github.io/astock-screener/"
+    export PAGE_URL="https://xxx.github.io/astock-screener/"   # 也可用统一名 PAGES_URL
     python scripts/notify_feishu.py            # 正式推送
     python scripts/notify_feishu.py --dry-run  # 只打印卡片不发送
 """
@@ -119,7 +119,12 @@ def build_card(data: dict) -> dict:
         src_lines.append(f"{mark} {s['name']}")
     elements.append({"tag": "note", "elements": [{"tag": "plain_text", "content": "数据源：" + " / ".join(src_lines) + " · 金额为披露或估算值，仅供参考，不构成投资建议"}]})
 
-    page_url = os.environ.get("PAGE_URL") or CONFIG.get("feishu", {}).get("pageUrl") or ""
+    page_url = (
+        os.environ.get("PAGES_URL")
+        or os.environ.get("PAGE_URL")  # 旧名，保持兼容
+        or CONFIG.get("feishu", {}).get("pageUrl")
+        or ""
+    )
     if page_url:
         elements.append(
             {

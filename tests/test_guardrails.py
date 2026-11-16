@@ -231,5 +231,54 @@ class TestFetchSelection(unittest.TestCase):
         self.assertIsNone(fetch_selection.normalize([{"name": "没有代码"}]))
 
 
+class TestHistoryRetention(unittest.TestCase):
+    """快照索引与保留期回归。
+
+    历史文件名是 YYYY-MM-DD.json，曾用 stem.isdigit() 过滤，恒为 False：
+    index.json 永远是 {"dates": []}，180 份保留期也从未生效，仓库每交易日
+    被动增长约 1.1 MB。这里锁住「能被识别 + 能按上限裁剪」两件事。
+    """
+
+    def test_date_stem_matches(self):
+        import fetch_data  # noqa: PLC0415
+
+        self.assertTrue(fetch_data.SNAPSHOT_RE.match("2026-11-16"))
+        for not_a_date in ("index", "latest", "demo", "2026-11-16-extra"):
+            self.assertIsNone(fetch_data.SNAPSHOT_RE.match(not_a_date))
+
+    def test_write_payload_indexes_and_prunes(self):
+        import datetime as _dt  # noqa: PLC0415
+        import tempfile  # noqa: PLC0415
+        from pathlib import Path as _Path  # noqa: PLC0415
+
+        import fetch_data  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = _Path(tmp)
+            hist = data_dir / "history"
+            hist.mkdir()
+            # 必须同时替换 DATA_DIR，否则会把真实的 data/latest.json 覆盖成空数据
+            originals = (fetch_data.DATA_DIR, fetch_data.HISTORY_DIR)
+            fetch_data.DATA_DIR, fetch_data.HISTORY_DIR = data_dir, hist
+            try:
+                # 造 200 份历史快照，全部早于写入日，超出 180 份上限
+                base = _dt.date(2026, 11, 16)
+                for i in range(200):
+                    day = (base - _dt.timedelta(days=i + 1)).isoformat()
+                    (hist / f"{day}.json").write_text("{}", encoding="utf-8")
+                (hist / "index.json").write_text('{"dates": []}', encoding="utf-8")
+
+                fetch_data.write_payload({"tradeDate": "2026-11-16", "events": []})
+
+                index = json.loads((hist / "index.json").read_text(encoding="utf-8"))
+                self.assertIn("2026-11-16", index["dates"], "索引没有收录当天快照")
+                self.assertEqual(len(index["dates"]), 180, "索引未按 180 份上限裁剪")
+                self.assertEqual(len(list(hist.glob("20*.json"))), 180, "保留期没有删除旧快照")
+                self.assertTrue((hist / "index.json").exists(), "index.json 不应被保留期误删")
+                self.assertEqual(index["dates"], sorted(index["dates"], reverse=True), "索引应新日期在前")
+            finally:
+                fetch_data.DATA_DIR, fetch_data.HISTORY_DIR = originals
+
+
 if __name__ == "__main__":
     unittest.main()

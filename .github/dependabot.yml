@@ -1,0 +1,40 @@
+version: 2
+# 与 BIGApush / etf-feishu-push / limit-up-relay 保持同一套策略：
+# Action 用 SHA 固定，靠 dependabot 每周提 PR 才不会被忘在旧版本；
+# 依赖按 ecosystem 独立配额，避免跨大版本升级占满槽位导致安全补丁开不出 PR。
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:30"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:30"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "chore(deps)"
+    # akshare 钉死 ==1.20.42：collectors 依赖其列名与字段名，上游改一次字段
+    # 就会静默取到空数据。升级必须人工改 requirements + 跑一次 daily.yml 实测。
+    # 只拦版本更新，安全公告仍会正常开 PR。
+    ignore:
+      - dependency-name: "akshare"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"

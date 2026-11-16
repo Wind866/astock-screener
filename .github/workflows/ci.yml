@@ -21,7 +21,10 @@ jobs:
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.12'
+          # 与 BIGApush / etf-feishu-push / limit-up-relay 统一到 3.11：
+          # 同一套 akshare 版本在四个仓库跑同一条取数链路，环境不一致时
+          # 「这里跑得通」不能证明「生产跑得通」。
+          python-version: '3.11'
 
       - name: 语法检查
         run: python -m compileall -q scripts tests
