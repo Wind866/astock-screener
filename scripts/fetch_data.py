@@ -132,6 +132,29 @@ def main() -> int:
     else:
         events, sources = collect_all(config)
         data_mode = "live" if any(s["status"] == "ok" for s in sources) else "degraded"
+        # 合并旧项目 / 外部来源的数据（data/extra/*.json），失败不影响主流程
+        try:
+            from merge_extra import load_extra_events  # noqa: PLC0415
+
+            extra_events, extra_files = load_extra_events(config.get("extraAmountUnit", "wan"))
+            if extra_events:
+                events.extend(extra_events)
+                sources.append(
+                    {
+                        "name": "外部项目",
+                        "status": "ok",
+                        "count": len(extra_events),
+                        "message": f"{'、'.join(extra_files)} 合并 {len(extra_events)} 条",
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001
+            sources.append({"name": "外部项目", "status": "error", "count": 0, "message": str(exc)[:120]})
+
+    # 按 id 去重，避免采集源与外部数据重复
+    deduped: dict[str, dict] = {}
+    for event in events:
+        deduped.setdefault(event["id"], event)
+    events = list(deduped.values())
 
     events.sort(key=lambda e: (e.get("announceDate") or "", e.get("amount") or 0), reverse=True)
     events = events[: int(config.get("maxEvents", 2000))]

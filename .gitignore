@@ -14,4 +14,5 @@ Thumbs.db
 
 # 本地截图 / 临时
 *.png
+!docs/*.png
 *.log

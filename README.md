@@ -74,6 +74,28 @@ git push -u origin main
 2. 把这个地址填到 `PAGE_URL` Secret，飞书卡片即可一键跳转
 3. `daily.yml` 每个工作日 16:40（北京时间）自动采集、推送、回写 `data/` 快照；也可在 Actions 页面手动 Run
 
+## 接入你已有的项目数据
+
+不用改旧项目代码，把它的输出 JSON 丢进 `data/extra/` 就会被自动识别并并入事件表（每日定时任务也会带上）。
+
+```bash
+cp /path/to/旧项目/dist/ledger.json data/extra/
+python scripts/merge_extra.py --dry-run   # 先看识别结果
+python scripts/merge_extra.py             # 确认后写回 data/latest.json
+```
+
+识别规则（`scripts/merge_extra.py`）：
+
+| 能力 | 说明 |
+| --- | --- |
+| 结构 | 顶层数组、`{"events"/"items"/"rows"/"data"/"list": [...]}`、日期分组的字典 |
+| 字段 | 中英文别名模糊匹配：代码/名称/股东/数量/金额/占比/公告日期/进度/备注…… |
+| 类型 | 优先取 `type` 字段，否则按关键词推断（增持/减持/定增/回购/分红，含英文） |
+| 单位 | 金额默认按万元；字符串自带 `亿/万/元` 自动折算；整体单位可用 `--amount-unit yuan\|auto` 调整 |
+| 去重 | 按 类型+代码+日期+主体+数量 生成指纹，重复运行不会重复入库 |
+
+常见坑：金额字段若是「元」，加 `--amount-unit yuan`（或写进 `config.json` 的 `extraAmountUnit`）；分红行的股息率若存成小数（`0.0287`）会自动转成 `2.87%`。合并后的条目在前端「状态」列显示为「外部数据」，来源显示「外部项目」，方便和数据源数据区分。
+
 ## 配置（config.json）
 
 ```json
@@ -81,6 +103,7 @@ git push -u origin main
   "lookbackDays": 90,      // 采集回看窗口
   "maxEvents": 2000,       // 数据文件事件上限
   "minAmountWan": 0,       // 全局金额下限（万元）
+  "extraAmountUnit": "wan", // data/extra 里金额字段的单位：wan / yuan / auto
   "sources": { ... },      // 可单独关闭某类数据源
   "feishu": { "maxItemsPerSection": 6, "pageUrl": "" }
 }
@@ -93,10 +116,12 @@ git push -u origin main
 ├── assets/                  # 样式与交互脚本
 ├── data/
 │   ├── latest.json / .js    # 最新数据（脚本会同时生成两种格式）
+│   ├── extra/               # 旧项目/外部 JSON 投喂目录
 │   └── history/             # 每日快照与索引
 ├── scripts/
-│   ├── collectors.py        # 四类事件采集与归一化
+│   ├── collectors.py        # 五类事件采集与归一化
 │   ├── fetch_data.py        # 采集入口（--demo / --days）
+│   ├── merge_extra.py       # 外部 JSON 归一化与合并
 │   ├── notify_feishu.py     # 飞书卡片推送（含签名）
 │   └── demo_data.py         # 离线演示数据
 ├── .github/workflows/

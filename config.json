@@ -2,6 +2,7 @@
   "lookbackDays": 90,
   "maxEvents": 2000,
   "minAmountWan": 0,
+  "extraAmountUnit": "wan",
   "sources": {
     "holder": true,
     "placement": true,
