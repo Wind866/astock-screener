@@ -8,8 +8,8 @@ cron 时间点兜底。代价是「补档」会重复推送同一个档期 —�
 台账格式对齐 BIGApush 的 ``.push-state/ledger.json``，两个仓库看起来是同一套东西。
 
 用法：
-    python scripts/push_ledger.py --check  --workflow daily.yml --slot 16   # 判断是否该推
-    python scripts/push_ledger.py --record --workflow daily.yml --slot 16   # 推成功后记账
+    python scripts/push_ledger.py --check  --workflow daily.yml --slot 2033  # 判断是否该推
+    python scripts/push_ledger.py --record --workflow daily.yml --slot 2033  # 推成功后记账
     python scripts/push_ledger.py --show                                     # 查看台账
     python scripts/push_ledger.py --check ... --force                        # 强制视为该推
 
@@ -95,7 +95,7 @@ def main() -> int:
     parser.add_argument("--record", action="store_true", help="记录一次成功推送")
     parser.add_argument("--show", action="store_true", help="打印台账")
     parser.add_argument("--workflow", default="daily.yml")
-    parser.add_argument("--slot", default="16", help="档期小时，如 16（收盘后）")
+    parser.add_argument("--slot", default="2033", help="档期时刻 HHMM，如 2033（20:33 收盘后）")
     parser.add_argument("--edition", default="", help="档期日期，默认今天")
     parser.add_argument("--run-id", default="")
     parser.add_argument("--note", default="")

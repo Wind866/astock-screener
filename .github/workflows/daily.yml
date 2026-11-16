@@ -1,16 +1,18 @@
 name: 每日事件采集与飞书推送
 
 # 北京时间 = UTC+8。
-# GitHub 的 schedule 实测会延迟 4h 以上、偶有整档丢弃（BIGApush 里的实测结论），
-# 所以主档之后每 2 小时铺一档兜底，靠 .push-state/ledger.json 判重，补档不会重复刷屏。
+# 准点触发已交给 BIGApush 的 Cloudflare Worker（每天 20:33 派发 workflow_dispatch），
+# 这里的 schedule 只作兜底：GitHub cron 实测会延迟 4h 以上、偶有整档丢弃。
+# 兜底档靠 .push-state/ledger.json 按「运行当日 + slot=2033」判重，补档不会重复刷屏。
+# 兜底全部收敛在当天（不跨午夜）：台账 edition 用运行日期，跨日会算成新档重复推送。
 # 非交易日（周末/节假日）由 scripts/is_trading_day.py 直接跳过，不推昨天的榜单。
 
 on:
   schedule:
-    - cron: '40 8 * * 1-5'    # 北京 16:40 主档（收盘后）
-    - cron: '40 10 * * 1-5'   # 18:40 (+2h)
-    - cron: '40 12 * * 1-5'   # 20:40 (+4h)
-    - cron: '40 14 * * 1-5'   # 22:40 (+6h)
+    - cron: '33 12 * * 1-5'   # 北京 20:33 主档（收盘后，与 Worker PLAN 对齐）
+    - cron: '33 13 * * 1-5'   # 21:33 兜底 (+1h)
+    - cron: '33 14 * * 1-5'   # 22:33 兜底 (+2h)
+    - cron: '33 15 * * 1-5'   # 23:33 兜底 (+3h，当天最后一档)
   workflow_dispatch:
     inputs:
       force:
@@ -59,7 +61,7 @@ jobs:
       - name: 台账判重（同档期只推一次）
         id: ledger
         if: steps.trading.outputs.is_trading == 'true'
-        run: python scripts/push_ledger.py --check --workflow daily.yml --slot 16 ${{ inputs.force && '--force' || '' }}
+        run: python scripts/push_ledger.py --check --workflow daily.yml --slot 2033 ${{ inputs.force && '--force' || '' }}
 
       - name: 非交易日提示
         if: steps.trading.outputs.is_trading != 'true'
@@ -77,7 +79,7 @@ jobs:
         if: steps.trading.outputs.is_trading == 'true' && steps.ledger.outputs.should_push == 'true'
         env:
           PAGE_URL: ${{ secrets.PAGE_URL }}
-        run: python scripts/notify_feishu.py --slot 16 ${{ inputs.force && '--force' || '' }}
+        run: python scripts/notify_feishu.py --slot 2033 ${{ inputs.force && '--force' || '' }}
 
       - name: 回写数据快照与推送台账
         id: commit

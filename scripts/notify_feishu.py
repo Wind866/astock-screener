@@ -149,7 +149,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="不实际发送，仅打印卡片")
     parser.add_argument("--file", default=None, help="指定数据文件（默认 data/latest.json）")
-    parser.add_argument("--slot", default="16", help="档期小时（默认 16 = 收盘后），用于台账判重")
+    parser.add_argument("--slot", default="2033", help="档期时刻 HHMM（默认 2033 = 20:33 收盘后），用于台账判重")
     parser.add_argument("--edition", default="", help="档期日期，默认今天")
     parser.add_argument("--force", action="store_true", help="忽略台账强制推送")
     parser.add_argument("--no-ledger", action="store_true", help="不读也不写台账（纯手动调试）")

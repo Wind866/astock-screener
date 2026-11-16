@@ -1,6 +1,6 @@
 # A股事件筛选器
 
-> 按股东增减持、定增、回购、分红筛选 A 股的静态看板；手机/电脑自适应，数据每工作日 16:40（北京时间）更新。
+> 按股东增减持、定增、回购、分红筛选 A 股的静态看板；手机/电脑自适应，数据每工作日 20:33（北京时间）更新。
 > 线上地址：<https://wind866.github.io/astock-screener/>
 
 ![预览](docs/preview.png)
@@ -25,9 +25,13 @@
 
 | 北京时间 | 任务 | 说明 |
 | --- | --- | --- |
-| 16:40（工作日） | 主档采集 + 推送 + 回写数据 | `daily.yml` |
-| 18:40 / 20:40 / 22:40 | cron 兜底档 | 按档期 + 台账判重，不重复推送 |
+| 20:33（工作日） | 主档采集 + 推送 + 回写数据 | 由 BIGApush 的 Cloudflare Worker 准点派发 `daily.yml` |
+| 21:33 / 22:33 / 23:33 | cron 兜底档 | 按「运行当日 + slot=2033」台账判重，不重复推送 |
 
+> 准点触发在 [BIGApush 的 Worker](https://github.com/Wind866/BIGApush/tree/main/cloudflare) 统一调度（20:33 档）；
+> 本仓库的 `schedule` 只作兜底，且全部收敛在当天——台账按运行日期记档期，跨午夜会被算成新档重复推送。
+> `GH_TOKEN` 需勾选本仓库的 Actions: Read and write，否则 Worker 派发会 403。
+>
 > `daily.yml` 内置 deploy job：用 `GITHUB_TOKEN` 的提交不会触发 `pages.yml`，因此数据回写后必须在同一 run 内重新发布 Pages。
 
 ## 本地开发
