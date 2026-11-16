@@ -68,6 +68,26 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
+PLACEHOLDER_TEXT = {"", "-", "--", "—", "nan", "none", "nat", "null", "<na>", "[]"}
+
+
+def _to_text(value: Any, default: str = "") -> str:
+    """把单元格转成干净文本：NaN / None / NaT 一律回落 default。
+
+    pandas 的空值是真值（``bool(float('nan')) is True``），所以
+    ``str(cell or "默认值")`` 会得到字符串 "nan" 而不是默认值 —— 早期版本
+    因此把 28 条回购事件的「实施进度」写成了 "nan"，前端直接显示 nan。
+    """
+    if value is None:
+        return default
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return default
+    text = str(value).strip()
+    if text.lower() in PLACEHOLDER_TEXT:
+        return default
+    return text
+
+
 def _to_date(value: Any) -> str:
     """统一输出 YYYY-MM-DD，失败返回空串。"""
     if value is None:
@@ -180,7 +200,7 @@ def collect_holder_changes(days: int = 90) -> tuple[list[dict], str]:
         if effective and effective < cutoff:
             continue
 
-        direction_raw = str(_cell(row, columns, "增减") or "")
+        direction_raw = _to_text(_cell(row, columns, "增减"))
         shares_wan = _to_float(_cell(row, columns, "变动数量"))
         if shares_wan is None:
             shares_wan = _to_float(_cell(row, columns, "变动股数"))
@@ -195,13 +215,13 @@ def collect_holder_changes(days: int = 90) -> tuple[list[dict], str]:
         price = _to_float(_cell(row, columns, "最新价"))
         amount = abs(shares) * price / 1e4 if price else None  # 万元
 
-        party = str(_cell(row, columns, "股东名称") or "").strip()
+        party = _to_text(_cell(row, columns, "股东名称"))
         events.append(
             {
                 "id": f"{direction}-{code}-{effective}-{party}-{int(shares)}",
                 "type": direction,
                 "code": code,
-                "name": str(_cell(row, columns, "名称&name", "名称") or "").strip(),
+                "name": _to_text(_cell(row, columns, "名称&name", "名称")),
                 "board": board_of(code),
                 "party": party or "—",
                 "partyKind": _party_kind(party),
@@ -251,7 +271,7 @@ def collect_repurchases(days: int = 90) -> tuple[list[dict], str]:
             continue
 
         amount_wan = amount_yuan / 1e4 if amount_yuan else (plan_high / 1e4 if plan_high else None)
-        progress = str(_cell(row, columns, "实施进度") or "进行中").strip()
+        progress = _to_text(_cell(row, columns, "实施进度"), "进行中")
         events.append(
             {
                 # id 里带上进度与金额：同一家公司同日可能有多份回购公告（不同方案/不同进度），
@@ -259,7 +279,7 @@ def collect_repurchases(days: int = 90) -> tuple[list[dict], str]:
                 "id": f"repurchase-{code}-{effective}-{progress}-{int(amount_wan or 0)}",
                 "type": "repurchase",
                 "code": code,
-                "name": str(_cell(row, columns, "股票简称", "名称") or "").strip(),
+                "name": _to_text(_cell(row, columns, "股票简称", "名称")),
                 "board": board_of(code),
                 "party": "上市公司回购",
                 "partyKind": "公司",
@@ -326,15 +346,15 @@ def collect_placements(days: int = 90) -> tuple[list[dict], str]:
         if amount_wan is None and price:
             amount_wan = shares * price / 1e4  # 万元
 
-        method = str(_cell(row, columns, "发行方式") or "定向增发").strip()
+        method = _to_text(_cell(row, columns, "发行方式"), "定向增发")
         events.append(
             {
                 "id": f"placement-{code}-{issue_date}-{int(shares)}",
                 "type": "placement",
                 "code": code,
-                "name": str(_cell(row, columns, "股票名称", "股票简称", "名称") or "").strip(),
+                "name": _to_text(_cell(row, columns, "股票名称", "股票简称", "名称")),
                 "board": board_of(code),
-                "party": str(_cell(row, columns, "发行对象") or "定增认购方").strip() or "定增认购方",
+                "party": _to_text(_cell(row, columns, "发行对象"), "定增认购方"),
                 "partyKind": "机构股东",
                 "shares": shares,
                 "ratio": None,
@@ -429,7 +449,7 @@ def collect_dividends(days: int = 90) -> tuple[list[dict], str]:
                     "id": f"dividend-{code}-{report_date}-{per_10}-{bonus}-{transfer}",
                     "type": "dividend",
                     "code": code,
-                    "name": str(_cell(row, columns, "名称&name", "名称") or "").strip(),
+                    "name": _to_text(_cell(row, columns, "名称&name", "名称")),
                     "board": board_of(code),
                     "party": "／".join(plan_text) if plan_text else "分红方案",
                     "partyKind": "公司",
@@ -444,7 +464,7 @@ def collect_dividends(days: int = 90) -> tuple[list[dict], str]:
                     "startDate": ex_date,
                     "endDate": "",
                     "announceDate": announce or ex_date or record_date,
-                    "status": str(_cell(row, columns, "方案进度") or "预案").strip(),
+                    "status": _to_text(_cell(row, columns, "方案进度"), "预案"),
                     "dividendPer10": per_10,
                     "bonusPer10": bonus,
                     "transferPer10": transfer,

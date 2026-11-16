@@ -84,6 +84,47 @@ class TestDataShape(unittest.TestCase):
         self.assertTrue(text.startswith("window.ASTOCK_DATA = "), "latest.js 格式不对，file:// 打开会失败")
 
 
+class TestTextNormalization(unittest.TestCase):
+    """NaN 回归：pandas 空值是真值，str(cell or "默认值") 会产出字符串 "nan"。"""
+
+    def test_to_text_falls_back_on_empty_values(self):
+        import collectors  # noqa: PLC0415
+
+        for empty in (None, float("nan"), float("inf"), "nan", "NaN", "None", "NaT", "null", "  ", "--", "—", "<NA>"):
+            self.assertEqual(collectors._to_text(empty, "进行中"), "进行中", f"{empty!r} 应回落默认值")
+            self.assertEqual(collectors._to_text(empty), "", f"{empty!r} 应回落空串")
+
+    def test_to_text_keeps_real_values(self):
+        import collectors  # noqa: PLC0415
+
+        self.assertEqual(collectors._to_text("实施中", "进行中"), "实施中")
+        self.assertEqual(collectors._to_text(" 完成实施 ", "进行中"), "完成实施")
+        self.assertEqual(collectors._to_text(0, "进行中"), "0", "数值 0 不应被当成空值")
+
+    def test_scrub_event_clears_placeholders(self):
+        import fetch_data  # noqa: PLC0415
+
+        event = {"id": "repurchase-600000-2026-11-13-nan-1", "name": "浦发银行", "status": "nan", "party": " None ", "method": "二级市场回购"}
+        cleaned = fetch_data.scrub_event(dict(event))
+        self.assertEqual(cleaned["status"], "")
+        self.assertEqual(cleaned["party"], "")
+        self.assertEqual(cleaned["name"], "浦发银行")
+        self.assertEqual(cleaned["method"], "二级市场回购")
+
+    def test_latest_data_has_no_placeholder_text(self):
+        path = ROOT / "data" / "latest.json"
+        if not path.exists():
+            self.skipTest("data/latest.json 尚未生成")
+        events = json.loads(path.read_text(encoding="utf-8"))["events"]
+        bad = [
+            f"{event.get('id')}: {key}={value!r}"
+            for event in events
+            for key in ("name", "party", "status", "method")
+            if isinstance(value := event.get(key), str) and value.strip().lower() in {"nan", "none", "nat", "null", "<na>"}
+        ]
+        self.assertEqual(bad, [], "数据里出现 nan/None 伪文本：\n" + "\n".join(bad[:10]))
+
+
 class TestMergeExtra(unittest.TestCase):
     """外部数据归一化回归：这是接旧项目数据的入口，字段映射错了会静默丢数据。"""
 

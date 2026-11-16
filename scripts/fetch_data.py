@@ -38,6 +38,21 @@ TYPE_LABEL = {
     "dividend": "分红",
 }
 
+# pandas 空值 / 外部 JSON 里常见的伪文本，写进数据文件前统一清掉
+PLACEHOLDER_TEXT = {"nan", "none", "nat", "null", "<na>", "[]"}
+
+
+def scrub_event(event: dict) -> dict:
+    """清掉 "nan" / "None" / "NaT" 这类伪文本，避免前端把空值显示成 nan。
+
+    collectors 侧已用 _to_text 在取值时就兜住 NaN；这里再兜一道，
+    是因为外部 JSON 投喂（merge_extra）和后续新增的数据源不一定走同一套归一化。
+    """
+    for key, value in event.items():
+        if isinstance(value, str) and value.strip().lower() in PLACEHOLDER_TEXT:
+            event[key] = ""
+    return event
+
 
 def setup_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
@@ -174,6 +189,7 @@ def main() -> int:
     for event in events:
         deduped.setdefault(event["id"], event)
     events = list(deduped.values())
+    events = [scrub_event(event) for event in events]
 
     events.sort(key=lambda e: (e.get("announceDate") or "", e.get("amount") or 0), reverse=True)
     events = events[: int(config.get("maxEvents", 2000))]
