@@ -91,7 +91,10 @@ git push -u origin main
 
 1. **Settings → Pages → Source 选 GitHub Actions**，`pages.yml` 会把整个仓库作为静态站点发布，地址形如 `https://<用户名>.github.io/astock-screener/`
 2. 把这个地址填到 `PAGE_URL` Secret，飞书卡片即可一键跳转
-3. `daily.yml` 自动采集→推送→回写 `data/` 与台账；也可在 Actions 页面手动 Run（勾 `force` 可强制重推）
+3. **Settings → Actions → General → Workflow permissions** 选 **Read and write**（`daily.yml` 需要回写数据）
+4. `daily.yml` 自动采集→推送→回写 `data/` 与台账；也可在 Actions 页面手动 Run（勾 `force` 可强制重推）
+
+> **部署为什么要写在 daily.yml 里**：用 `GITHUB_TOKEN` 提交的 commit 不会触发其他工作流（GitHub 防递归机制），所以每日回写数据后 `pages.yml` 不会自己重跑，线上站点会永远停在旧数据。`daily.yml` 因此内置了 `deploy` job：`collect` 输出 `data_changed`，只有数据真的变了才在同一 run 内重新发 Pages。
 
 > CI（`ci.yml`）会在每次 push 时跑守护测试：**扫描是否误提交了真实 webhook**、数据结构是否合法、外部数据归一化是否回归、工作流 YAML 是否可解析。
 
