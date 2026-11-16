@@ -1,4 +1,4 @@
 # 与 BIGApush / etf-feishu-push 对齐：akshare 曾静默改字段名，必须锁版本。
 akshare==1.20.42
-pandas>=2.0.0,<3
+pandas>=3.1.1,<4
 requests>=2.31.0,<3
