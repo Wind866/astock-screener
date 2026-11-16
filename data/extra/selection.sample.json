@@ -1,0 +1,15 @@
+{
+  "source": "BIGApush",
+  "generatedAt": "2026-11-16T19:45:12+08:00",
+  "asOf": "2026-11-16",
+  "days": 10,
+  "count": 6,
+  "picks": [
+    {"code": "600887", "name": "伊利股份", "date": "2026-11-16", "selectionTime": "2026-11-16 19:40:02", "strategies": ["启明星", "碗口反弹"], "strategyCount": 2, "score": 86.5, "rank": 1, "price": 31.89, "industry": "食品饮料", "sector": "消费"},
+    {"code": "600176", "name": "中国巨石", "date": "2026-11-16", "selectionTime": "2026-11-16 19:40:05", "strategies": ["多均线金叉"], "strategyCount": 1, "score": 78.2, "rank": 3, "price": 27.37, "industry": "建材", "sector": "周期"},
+    {"code": "300832", "name": "新产业", "date": "2026-11-14", "selectionTime": "2026-11-14 19:41:10", "strategies": ["涨停回踩"], "strategyCount": 1, "score": 72.0, "rank": 6, "price": 68.4, "industry": "医疗器械", "sector": "医药"},
+    {"code": "600519", "name": "贵州茅台", "date": "2026-11-13", "selectionTime": "2026-11-13 19:40:44", "strategies": ["趋势加速拐点", "多方炮", "黄金三角"], "strategyCount": 3, "score": 91.3, "rank": 1, "price": 1688.0, "industry": "白酒", "sector": "消费"},
+    {"code": "300692", "name": "中赋科技", "date": "2026-11-12", "selectionTime": "2026-11-12 19:42:00", "strategies": ["底部反转"], "strategyCount": 1, "score": 65.4, "rank": 12, "price": 6.83, "industry": "环保", "sector": "公用事业"},
+    {"code": "600908", "name": "无锡银行", "date": "2026-11-11", "selectionTime": "2026-11-11 19:40:31", "strategies": ["强势洗盘弱转强"], "strategyCount": 1, "score": 69.8, "rank": 8, "price": 6.18, "industry": "银行", "sector": "金融"}
+  ]
+}

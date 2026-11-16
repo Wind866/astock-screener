@@ -10,6 +10,7 @@
 - **多条件组合**：关键词（代码/名称/股东，空格分隔）、事件类型多选、板块、公告时间（7/30/90 天/全部）、金额下限、股息率下限、进度状态
 - **排序**：侧栏排序 + 表头点击排序（公告日、金额、占比/股息率、数量、涨跌幅、名称）
 - **交互**：KPI 卡片点击即筛选、行点击打开详情抽屉、星标自选股（本地保存）、筛选状态写入 URL 可直接分享、CSV 导出、深浅色主题
+- **选股 × 事件交叉**（可选）：对接 [BIGApush](https://github.com/Wind866/BIGApush) 收盘选股池——表格里出现 `⌖` 徽标标记当天被形态策略选中的个股，「只看选股池内」一键交叉，详情抽屉展示命中策略/评分/排名；接法见 [docs/bigapush-integration](docs/bigapush-integration/README.md)，没接时自动隐藏
 - **可视化**：近 14 日事件分布堆叠图、事件金额构成环形图（纯 SVG，无第三方库）
 - **每日推送**：GitHub Actions 定时采集 → 飞书卡片（含统计与各类 TOP 榜）→ 数据快照回写仓库
 
@@ -140,6 +141,7 @@ python scripts/merge_extra.py             # 确认后写回 data/latest.json
 ├── scripts/
 │   ├── collectors.py        # 五类事件采集与归一化
 │   ├── fetch_data.py        # 采集入口（--demo / --days）
+│   ├── fetch_selection.py   # 拉取 BIGApush 选股池（选股 × 事件交叉）
 │   ├── merge_extra.py       # 外部 JSON 归一化与合并
 │   ├── feishu_webhook.py    # 飞书发送层（加签/重试/业务码校验）
 │   ├── notify_feishu.py     # 事件卡片推送

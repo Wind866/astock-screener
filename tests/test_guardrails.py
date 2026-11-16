@@ -168,5 +168,27 @@ class TestWorkflows(unittest.TestCase):
         self.assertIn("失败告警", names)
 
 
+class TestFetchSelection(unittest.TestCase):
+    """选股池联动回归：样例文件与 BIGApush 导出格式必须始终能被识别。"""
+
+    def test_sample_normalizes(self):
+        import fetch_selection  # noqa: PLC0415
+
+        sample = ROOT / "data" / "extra" / "selection.sample.json"
+        self.assertTrue(sample.exists(), "示例文件丢失，docs 里的联动说明会失效")
+        data = fetch_selection.normalize(json.loads(sample.read_text(encoding="utf-8")), days=3650)
+        self.assertIsNotNone(data)
+        self.assertEqual(data["stocks"], 6)
+        for pick in data["picks"]:
+            self.assertEqual(len(pick["code"]), 6)
+            self.assertRegex(pick["date"], r"^\d{4}-\d{2}-\d{2}$")
+
+    def test_garbage_returns_none(self):
+        import fetch_selection  # noqa: PLC0415
+
+        self.assertIsNone(fetch_selection.normalize({"foo": "bar"}))
+        self.assertIsNone(fetch_selection.normalize([{"name": "没有代码"}]))
+
+
 if __name__ == "__main__":
     unittest.main()

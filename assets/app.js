@@ -28,6 +28,17 @@
   var TODAY = (DATA && DATA.tradeDate) ? DATA.tradeDate : new Date().toISOString().slice(0, 10);
   var TODAY_TS = new Date(TODAY + 'T00:00:00').getTime();
 
+  // 选股池（来自 BIGApush 收盘选股）：code → 最新一条选股记录
+  var SELECTION = (DATA && DATA.selection) ? DATA.selection : null;
+  var PICKS = {};
+  if (SELECTION && SELECTION.picks) {
+    SELECTION.picks.forEach(function (p) {
+      if (!p || !p.code) return;
+      var old = PICKS[p.code];
+      if (!old || String(p.date) > String(old.date)) PICKS[p.code] = p;
+    });
+  }
+
   var els = {
     typeChips: document.getElementById('typeChips'),
     q: document.getElementById('q'),
@@ -37,6 +48,9 @@
     status: document.getElementById('status'),
     sort: document.getElementById('sort'),
     favOnly: document.getElementById('favOnly'),
+    picksOnly: document.getElementById('picksOnly'),
+    picksSwitch: document.getElementById('picksSwitch'),
+    picksHint: document.getElementById('picksHint'),
     rangeSeg: document.getElementById('rangeSeg'),
     kpis: document.getElementById('kpis'),
     tbody: document.getElementById('tbody'),
@@ -70,6 +84,7 @@
     sortKey: 'announceDate',
     sortDir: 'desc',
     favOnly: false,
+    onlyPicks: false,
     page: 1
   };
 
@@ -155,6 +170,7 @@
     opts = opts || {};
     if (!opts.skipType && state.types.length && state.types.indexOf(ev.type) === -1) return false;
     if (!opts.skipFav && state.favOnly && !favs.has(ev.code)) return false;
+    if (state.onlyPicks && !PICKS[ev.code]) return false;
     if (state.board && ev.board !== state.board) return false;
     if (state.status && ev.status !== state.status) return false;
     if (state.minAmount > 0 && (ev.amount == null || ev.amount < state.minAmount)) return false;
@@ -233,6 +249,7 @@
     els.sort.value = state.sortKey + '-' + state.sortDir;
     els.favOnly.checked = state.favOnly;
     els.btnFavView.classList.toggle('is-on', state.favOnly);
+    if (els.picksOnly) els.picksOnly.checked = state.onlyPicks;
     Array.prototype.forEach.call(els.rangeSeg.querySelectorAll('button'), function (b) {
       b.classList.toggle('is-active', Number(b.dataset.days) === state.days);
     });
@@ -312,6 +329,15 @@
     return '<span class="tag ' + type + '">' + info.label + '</span>';
   }
 
+  // 选股池徽标：命中 BIGApush 收盘选股时显示，数字＝命中策略数
+  function pickBadge(code) {
+    var p = PICKS[code];
+    if (!p) return '';
+    var n = p.strategyCount || (p.strategies || []).length || 1;
+    var tip = (p.strategies || []).join(' + ') || '选股池';
+    return '<span class="pick-badge" title="选股池 · ' + escapeHtml(tip) + '（' + escapeHtml(p.date || '') + '）">⌖' + (n > 1 ? n : '') + '</span>';
+  }
+
   function renderTable() {
     var start = (state.page - 1) * PAGE_SIZE;
     var pageItems = filtered.slice(start, start + PAGE_SIZE);
@@ -333,7 +359,7 @@
       return '<tr data-id="' + escapeHtml(ev.id) + '">' +
         '<td class="c-star"><button type="button" class="star-btn' + (fav ? ' is-on' : '') + '" data-star="' + ev.code + '" aria-label="收藏">' + starSvg() + '</button></td>' +
         '<td class="c-code">' + ev.code + '</td>' +
-        '<td class="c-name"><span class="nm">' + escapeHtml(ev.name) + '</span><span class="bd">' + escapeHtml(ev.board) + '</span></td>' +
+        '<td class="c-name"><span class="nm">' + escapeHtml(ev.name) + '</span>' + pickBadge(ev.code) + '<span class="bd">' + escapeHtml(ev.board) + '</span></td>' +
         '<td>' + typeTag(ev.type) + '</td>' +
         '<td class="c-party" title="' + escapeHtml(ev.party) + '">' + escapeHtml(ev.party) + '</td>' +
         '<td class="c-num">' + qty + '</td>' +
@@ -348,7 +374,7 @@
       var fav = favs.has(ev.code);
       var amountText = num(ev.amount) == null ? '—' : (ev.amountEstimated ? '≈' : '') + fmtAmount(ev.amount);
       return '<div class="m-card" data-id="' + escapeHtml(ev.id) + '">' +
-        '<div class="m-top"><div class="m-name"><b>' + escapeHtml(ev.name) + '</b><span>' + ev.code + '</span></div>' +
+        '<div class="m-top"><div class="m-name"><b>' + escapeHtml(ev.name) + '</b>' + pickBadge(ev.code) + '<span>' + ev.code + '</span></div>' +
         '<div style="display:flex;align-items:center;gap:6px">' + typeTag(ev.type) +
         '<button type="button" class="star-btn' + (fav ? ' is-on' : '') + '" data-star="' + ev.code + '" aria-label="收藏">' + starSvg() + '</button></div></div>' +
         '<div class="m-grid">' +
@@ -577,6 +603,21 @@
     }
     if (ev.method && ev.type !== 'placement') rows.push(row('交易方式', escapeHtml(ev.method)));
 
+    // 选股信号：该股在 BIGApush 收盘选股池里时，单独列一块
+    var pick = PICKS[ev.code];
+    var pickSection = '';
+    if (pick) {
+      var pRows = [];
+      if ((pick.strategies || []).length) pRows.push(row('命中策略', escapeHtml(pick.strategies.join(' + '))));
+      if (num(pick.score) != null) pRows.push(row('综合评分', '<b>' + pick.score + '</b>'));
+      if (num(pick.rank) != null) pRows.push(row('当日排名', '第 ' + pick.rank + ' 名'));
+      if (num(pick.price) != null) pRows.push(row('选入价', '¥' + Number(pick.price).toFixed(2)));
+      if (pick.industry) pRows.push(row('所属行业', escapeHtml(pick.industry)));
+      if (pick.sector) pRows.push(row('板块', escapeHtml(pick.sector)));
+      pRows.push(row('选入日期', escapeHtml(pick.date || '—')));
+      pickSection = '<div class="d-section pick-section"><h4>⌖ 选股信号 · BIGApush</h4><div class="d-list">' + pRows.join('') + '</div></div>';
+    }
+
     els.drawerBody.innerHTML =
       '<div class="d-hero">' +
       '<div class="box"><span>' + (ev.type === 'dividend' ? '预计派现总额' : '事件金额') + '</span><b>' + heroAmount + '</b></div>' +
@@ -584,6 +625,7 @@
       '</div>' +
       '<div class="d-section"><h4>变动方 / 方案</h4><div class="d-list">' + row('名称', escapeHtml(ev.party || '—')) + '</div></div>' +
       '<div class="d-section"><h4>事件明细</h4><div class="d-list">' + rows.join('') + '</div></div>' +
+      pickSection +
       '<div class="d-actions">' +
       '<a class="ghost-btn" href="' + quoteUrl(ev.code) + '" target="_blank" rel="noopener">东方财富行情 ↗</a>' +
       '<button class="ghost-btn" data-copy="' + ev.code + '">复制代码</button>' +
@@ -630,6 +672,7 @@
     if (state.status) p.set('st', state.status);
     if (state.sortKey !== 'announceDate' || state.sortDir !== 'desc') p.set('s', state.sortKey + '-' + state.sortDir);
     if (state.favOnly) p.set('fav', '1');
+    if (state.onlyPicks) p.set('pk', '1');
     if (state.page > 1) p.set('p', String(state.page));
     var hash = p.toString();
     if (location.hash.slice(1) !== hash) {
@@ -651,6 +694,7 @@
       if (COMPARATORS[parts[0]]) { state.sortKey = parts[0]; state.sortDir = parts[1] === 'asc' ? 'asc' : 'desc'; }
     }
     if (p.get('fav') === '1') state.favOnly = true;
+    if (p.get('pk') === '1') state.onlyPicks = true;
     if (p.get('page') || p.get('p')) state.page = Number(p.get('page') || p.get('p')) || 1;
   }
 
@@ -931,6 +975,23 @@
 
   /* ---------------------------------------------------------- 启动 */
 
+  function initPicksSwitch() {
+    if (!els.picksSwitch) return;
+    var count = Object.keys(PICKS).length;
+    if (!count) return;  // 没有选股池数据就别露这个开关
+    els.picksSwitch.hidden = false;
+    if (els.picksHint) {
+      els.picksHint.hidden = false;
+      els.picksHint.textContent = 'BIGApush 收盘选股 · 最新 ' + (SELECTION.asOf || '—') + ' · ' + count + ' 只';
+    }
+    els.picksOnly.addEventListener('change', function () {
+      state.onlyPicks = els.picksOnly.checked;
+      state.page = 1;
+      apply();
+      toast(state.onlyPicks ? '只看选股池内（' + count + ' 只）' : '已显示全部个股');
+    });
+  }
+
   function init() {
     try {
       var saved = localStorage.getItem(THEME_KEY);
@@ -950,6 +1011,7 @@
     readHash();
     renderStatusOptions();
     syncControls();
+    initPicksSwitch();
     bind();
     apply(false);
     markSortHeaders();

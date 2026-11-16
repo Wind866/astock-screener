@@ -122,6 +122,7 @@ def main() -> int:
         config["lookbackDays"] = args.days
 
     previous = load_previous()
+    selection = None
 
     if args.demo:
         from demo_data import build_demo_events  # noqa: PLC0415
@@ -150,6 +151,24 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             sources.append({"name": "外部项目", "status": "error", "count": 0, "message": str(exc)[:120]})
 
+        # 拉 BIGApush 收盘选股池，供前端做「选股 × 事件」交叉标注
+        try:
+            from fetch_selection import load_selection  # noqa: PLC0415
+
+            sel_conf = config.get("selection") or {}
+            selection = load_selection(sel_conf.get("url"), int(sel_conf.get("days", 15)))
+            if selection:
+                sources.append(
+                    {
+                        "name": "选股池·BIGApush",
+                        "status": "ok",
+                        "count": selection["count"],
+                        "message": f"{selection['stocks']} 只 / 最新 {selection['asOf']}",
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001
+            sources.append({"name": "选股池·BIGApush", "status": "error", "count": 0, "message": str(exc)[:120]})
+
     # 按 id 去重，避免采集源与外部数据重复
     deduped: dict[str, dict] = {}
     for event in events:
@@ -170,6 +189,7 @@ def main() -> int:
         "lookbackDays": config.get("lookbackDays"),
         "sources": sources,
         "stats": summarize(events),
+        "selection": selection,
         "delta": {"newEvents": new_count, "previousTradeDate": (previous or {}).get("tradeDate")},
         "events": events,
     }

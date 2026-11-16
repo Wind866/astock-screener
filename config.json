@@ -3,6 +3,10 @@
   "maxEvents": 2000,
   "minAmountWan": 0,
   "extraAmountUnit": "wan",
+  "selection": {
+    "url": "https://raw.githubusercontent.com/Wind866/BIGApush/main/exports/selection-latest.json",
+    "days": 15
+  },
   "sources": {
     "holder": true,
     "placement": true,
