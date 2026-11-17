@@ -4,7 +4,8 @@ name: 每日事件采集与飞书推送
 # 准点触发已交给 BIGApush 的 Cloudflare Worker（每天 20:33 派发 workflow_dispatch），
 # 这里的 schedule 只作兜底：GitHub cron 实测会延迟 4h 以上、偶有整档丢弃。
 # 兜底档靠 .push-state/ledger.json 按「运行当日 + slot=2033」判重，补档不会重复刷屏。
-# 兜底全部收敛在当天（不跨午夜）：台账 edition 用运行日期，跨日会算成新档期重复推送。
+# 兜底全部收敛在当天（不跨午夜）：台账 edition 用运行日期，跨日会算成新档期重复推送，
+# 因此 workflow 内置「跨日守卫」——被延迟拖到次日的档期直接判红告警、不采集不推送（force 可绕过）。
 # 非交易日（周末/节假日）由 scripts/is_trading_day.py 直接跳过，不推昨天的榜单。
 
 on:
@@ -57,6 +58,25 @@ jobs:
       - name: 交易日预检
         id: trading
         run: python scripts/is_trading_day.py
+
+      # 当天任务当天完成：20:33 收盘后档（兜底最晚 23:33）必须当天跑完。
+      # 台账 edition 用运行当天的日期；若 GitHub cron 把档期延迟拖到次日才触发
+      # （实测可晚 4~10h），edition 会算成新的一天 → 上一交易日的榜单被重复推送一遍。
+      # 这里在采集/推送之前判红并告警，不静默补跑；force 人工触发不受限。
+      - name: 跨日守卫（当天任务当天完成）
+        id: crossday
+        if: github.event_name == 'schedule' && inputs.force != true
+        run: |
+          HOUR=$(TZ=Asia/Shanghai date +%H)
+          # 主档 20:33、兜底收在 23:33；北京 00:00~19:59 触发说明是前一日档期被拖过午夜。
+          if [ "$HOUR" -lt 20 ]; then
+            NOW=$(TZ=Asia/Shanghai date +'%F %H:%M')
+            REASON="事件采集跨日运行：北京时间 $NOW 触发，已过当日 20:33~23:33 档期窗口；按「当天任务当天完成」规则跳过采集与推送并告警（不静默补跑上一交易日）"
+            echo "CROSS_REASON=$REASON" >> "$GITHUB_ENV"
+            echo "::error::$REASON"
+            exit 1
+          fi
+          echo "当天运行，跨日守卫通过（北京时间 $(TZ=Asia/Shanghai date +'%F %H:%M')）"
 
       - name: 台账判重（同档期只推一次）
         id: ledger
@@ -123,7 +143,9 @@ jobs:
 
       - name: 失败告警
         if: failure()
-        run: python scripts/alert.py "⚠️ A股事件雷达：每日采集/推送任务失败" || true
+        env:
+          CROSS_REASON: ${{ env.CROSS_REASON }}
+        run: python scripts/alert.py "${CROSS_REASON:-⚠️ A股事件雷达：每日采集/推送任务失败}" || true
 
       - name: 取消或超时告警
         if: always() && job.status == 'cancelled'
