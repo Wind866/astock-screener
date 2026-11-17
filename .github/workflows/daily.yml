@@ -4,7 +4,7 @@ name: 每日事件采集与飞书推送
 # 准点触发已交给 BIGApush 的 Cloudflare Worker（每天 20:33 派发 workflow_dispatch），
 # 这里的 schedule 只作兜底：GitHub cron 实测会延迟 4h 以上、偶有整档丢弃。
 # 兜底档靠 .push-state/ledger.json 按「运行当日 + slot=2033」判重，补档不会重复刷屏。
-# 兜底全部收敛在当天（不跨午夜）：台账 edition 用运行日期，跨日会算成新档重复推送。
+# 兜底全部收敛在当天（不跨午夜）：台账 edition 用运行日期，跨日会算成新档期重复推送。
 # 非交易日（周末/节假日）由 scripts/is_trading_day.py 直接跳过，不推昨天的榜单。
 
 on:
@@ -92,11 +92,34 @@ jobs:
           if git diff --cached --quiet; then
             echo "数据无变化，跳过提交"
             echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            git commit -m "data: 每日快照 $(date -u +%F)" --no-verify
-            git push
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          git commit -m "data: 每日快照 $(date -u +%F)" --no-verify
+
+          # 单次 git push 失败 = 快照和台账都没落盘，下一个兜底档读不到台账会再推一次飞书。
+          # 与 limit-up-relay / etf-feishu-push 对齐：rebase 后重试 3 次（那边是纯台账提交，
+          # 这里连 data/ 一起，冲突概率更低）。
+          pushed=false
+          for i in 1 2 3; do
+            if git push; then pushed=true; break; fi
+            echo "::warning::第 $i 次 git push 失败，rebase 后重试"
+            if ! git pull --rebase --autostash origin main; then
+              # 冲突时先 abort，否则仓库停在 rebase 中间，后面两次 push 一定失败
+              git rebase --abort 2>/dev/null || true
+            fi
+          done
+
+          if [ "$pushed" = "true" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 三次都失败：台账丢失 → 下一档必然重复推送。必须让本次运行变红触发告警，
+          # 而不是留一条 warning 让它静默滑过去。changed=false 让 Pages 部署跳过
+          # （部署一份没有新数据的 main 没有意义）。
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          echo "::error::快照与推送台账推送失败：本次数据未入库，下一档可能重复推送飞书"
+          exit 1
 
       - name: 失败告警
         if: failure()
