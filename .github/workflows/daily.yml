@@ -1,12 +1,16 @@
-name: 每日事件采集与飞书推送
+name: 每日事件采集
 
 # 北京时间 = UTC+8。
-# 准点触发已交给 BIGApush 的 Cloudflare Worker（每天 20:33 派发 workflow_dispatch），
-# 这里的 schedule 只作兜底：GitHub cron 实测会延迟 4h 以上、偶有整档丢弃。
-# 兜底档靠 .push-state/ledger.json 按「运行当日 + slot=2033」判重，补档不会重复刷屏。
-# 兜底全部收敛在当天（不跨午夜）：台账 edition 用运行日期，跨日会算成新档期重复推送，
-# 因此 workflow 内置「跨日守卫」——被延迟拖到次日的档期直接判红告警、不采集不推送（force 可绕过）。
-# 非交易日（周末/节假日）由 scripts/is_trading_day.py 直接跳过，不推昨天的榜单。
+# 2026-11-19 起停用全部飞书推送：榜单推送与失败/跨日告警步骤均已移除。
+# 本工作流现在只做交易日事件数据的采集、快照回写与 Pages 看板部署，
+# 不再往飞书发送任何消息。
+#
+# 准点触发由 BIGApush 的 Cloudflare Worker（20:33 派发 workflow_dispatch）负责；
+# GitHub schedule 仅作兜底：实测延迟 4h 以上、偶有整档丢弃。兜底档靠
+# .push-state/ledger.json 按「运行当日 + slot=2033」判重，补档不会重复采集。
+# 兜底全部收敛在当天（不跨午夜）：台账 edition 用运行日期，跨日会算成新档期，
+# 因此内置「跨日守卫」——被延迟拖到次日的档期直接跳过、不采集（force 可绕过）。
+# 非交易日（周末/节假日）由 scripts/is_trading_day.py 直接跳过。
 
 on:
   schedule:
@@ -17,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: '忽略台账判重，强制再推一次'
+        description: '忽略台账判重，强制再采集一次'
         type: boolean
         default: false
 
@@ -30,11 +34,6 @@ concurrency:
 
 env:
   TZ: Asia/Shanghai
-  # 告警机器人独立于业务机器人：业务 webhook 挂掉时告警还能发得出去
-  FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-  FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
-  ALERT_WEBHOOK: ${{ secrets.ALERT_WEBHOOK }}
-  ALERT_SECRET: ${{ secrets.ALERT_SECRET }}
 
 jobs:
   collect:
@@ -61,8 +60,8 @@ jobs:
 
       # 当天任务当天完成：20:33 收盘后档（兜底最晚 23:33）必须当天跑完。
       # 台账 edition 用运行当天的日期；若 GitHub cron 把档期延迟拖到次日才触发
-      # （实测可晚 4~10h），edition 会算成新的一天 → 上一交易日的榜单被重复推送一遍。
-      # 这里在采集/推送之前判红并告警，不静默补跑；force 人工触发不受限。
+      # （实测可晚 4~10h），edition 会算成新的一天 → 上一交易日的数据被重复写入。
+      # 这里在采集之前判红跳过，不静默补跑；force 人工触发不受限。
       - name: 跨日守卫（当天任务当天完成）
         id: crossday
         if: github.event_name == 'schedule' && inputs.force != true
@@ -71,36 +70,29 @@ jobs:
           # 主档 20:33、兜底收在 23:33；北京 00:00~19:59 触发说明是前一日档期被拖过午夜。
           if [ "$HOUR" -lt 20 ]; then
             NOW=$(TZ=Asia/Shanghai date +'%F %H:%M')
-            REASON="事件采集跨日运行：北京时间 $NOW 触发，已过当日 20:33~23:33 档期窗口；按「当天任务当天完成」规则跳过采集与推送并告警（不静默补跑上一交易日）"
+            REASON="事件采集跨日运行：北京时间 $NOW 触发，已过当日 20:33~23:33 档期窗口；按「当天任务当天完成」规则跳过采集（飞书告警已停用，不静默补跑上一交易日）"
             echo "CROSS_REASON=$REASON" >> "$GITHUB_ENV"
             echo "::error::$REASON"
             exit 1
           fi
           echo "当天运行，跨日守卫通过（北京时间 $(TZ=Asia/Shanghai date +'%F %H:%M')）"
 
-      - name: 台账判重（同档期只推一次）
+      - name: 台账判重（同档期只采集一次）
         id: ledger
         if: steps.trading.outputs.is_trading == 'true'
         run: python scripts/push_ledger.py --check --workflow daily.yml --slot 2033 ${{ inputs.force && '--force' || '' }}
 
       - name: 非交易日提示
         if: steps.trading.outputs.is_trading != 'true'
-        run: echo "::notice::非交易日，已跳过采集与推送"
+        run: echo "::notice::非交易日，已跳过采集"
 
-      - name: 本档期已推送提示
+      - name: 本档期已采集提示
         if: steps.trading.outputs.is_trading == 'true' && steps.ledger.outputs.should_push != 'true'
-        run: echo "::notice::本档期已推送成功，本次为补档跳过（要重推用 workflow_dispatch 勾选 force）"
+        run: echo "::notice::本档期已采集成功，本次为补档跳过（要重采集用 workflow_dispatch 勾选 force）"
 
       - name: 采集事件数据
         if: steps.trading.outputs.is_trading == 'true' && steps.ledger.outputs.should_push == 'true'
         run: python scripts/fetch_data.py
-
-      - name: 推送到飞书
-        if: steps.trading.outputs.is_trading == 'true' && steps.ledger.outputs.should_push == 'true'
-        env:
-          # 与 limit-up-relay / BIGApush 统一用 PAGES_URL；PAGE_URL 为旧名，保留回落避免老配置失效
-          PAGES_URL: ${{ secrets.PAGES_URL || secrets.PAGE_URL }}
-        run: python scripts/notify_feishu.py --slot 2033 ${{ inputs.force && '--force' || '' }}
 
       - name: 回写数据快照与推送台账
         id: commit
@@ -116,15 +108,11 @@ jobs:
           fi
           git commit -m "data: 每日快照 $(date -u +%F)" --no-verify
 
-          # 单次 git push 失败 = 快照和台账都没落盘，下一个兜底档读不到台账会再推一次飞书。
-          # 与 limit-up-relay / etf-feishu-push 对齐：rebase 后重试 3 次（那边是纯台账提交，
-          # 这里连 data/ 一起，冲突概率更低）。
           pushed=false
           for i in 1 2 3; do
             if git push; then pushed=true; break; fi
             echo "::warning::第 $i 次 git push 失败，rebase 后重试"
             if ! git pull --rebase --autostash origin main; then
-              # 冲突时先 abort，否则仓库停在 rebase 中间，后面两次 push 一定失败
               git rebase --abort 2>/dev/null || true
             fi
           done
@@ -134,22 +122,9 @@ jobs:
             exit 0
           fi
 
-          # 三次都失败：台账丢失 → 下一档必然重复推送。必须让本次运行变红触发告警，
-          # 而不是留一条 warning 让它静默滑过去。changed=false 让 Pages 部署跳过
-          # （部署一份没有新数据的 main 没有意义）。
           echo "changed=false" >> "$GITHUB_OUTPUT"
-          echo "::error::快照与推送台账推送失败：本次数据未入库，下一档可能重复推送飞书"
+          echo "::error::快照与推送台账推送失败：本次数据未入库，下一档可能重复采集"
           exit 1
-
-      - name: 失败告警
-        if: failure()
-        env:
-          CROSS_REASON: ${{ env.CROSS_REASON }}
-        run: python scripts/alert.py "${CROSS_REASON:-⚠️ A股事件雷达：每日采集/推送任务失败}" || true
-
-      - name: 取消或超时告警
-        if: always() && job.status == 'cancelled'
-        run: python scripts/alert.py "⚠️ A股事件雷达：job 被取消或超时（failure() 不会触发）" || true
 
   # 用 GITHUB_TOKEN 提交的 commit 不会触发 pages.yml（GitHub 防递归机制），
   # 所以每日数据更新后必须在本流程内部自己发一次 Pages，否则线上站点永远停在旧数据。
